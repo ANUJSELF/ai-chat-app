@@ -1,0 +1,16 @@
+{
+  "name": "ai-chat-app",
+  "version": "1.0.0",
+  "description": "Full-stack AI chat application",
+  "private": true,
+  "workspaces": [
+    "backend",
+    "frontend"
+  ],
+  "scripts": {
+    "install-all": "npm install && npm install --workspaces",
+    "dev": "npm run dev --workspaces",
+    "build": "npm run build --workspaces",
+    "start": "npm start --workspaces"
+  }
+}
