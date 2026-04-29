@@ -1,16 +1,7 @@
-import { Anthropic } from '@anthropic-ai/sdk';
-import { OpenAI } from 'openai';
+import OpenAI from 'openai';
 import { User, Message } from '../types';
 
-const provider = process.env.LLM_PROVIDER || 'anthropic';
-
-const anthropic = new Anthropic({
-  apiKey: process.env.ANTHROPIC_API_KEY,
-});
-
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
-});
+const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
 interface SystemPromptOptions {
   user: User;
@@ -19,12 +10,11 @@ interface SystemPromptOptions {
 
 function buildSystemPrompt(options: SystemPromptOptions): string {
   const { user, conversationHistory } = options;
-
   const jobInfo = user.job_title ? `Job Title: ${user.job_title}` : '';
   const interestsInfo = user.interests ? `Interests: ${user.interests}` : '';
-  const styleInfo = `Communication Style: ${user.communication_style}`;
+  const styleInfo = `Communication Style: ${user.communication_style || 'professional'}`;
 
-  let prompt = `You are a helpful and friendly AI assistant chatting with ${user.name}.
+  let prompt = `You are a helpful, friendly AI assistant chatting with ${user.name}.
 
 User Profile:
 - Name: ${user.name}
@@ -34,10 +24,9 @@ ${interestsInfo ? `- ${interestsInfo}` : ''}
 
 Guidelines:
 - Personalize your responses based on the user's profile
-- Use a ${user.communication_style} tone
+- Use a ${user.communication_style || 'professional'} tone
 - Reference their job title or interests when relevant
-- Be helpful, empathetic, and professional
-- Keep responses concise unless asked for more detail`;
+- Be helpful, empathetic, and concise unless asked for more detail`;
 
   if (conversationHistory.length > 0) {
     const recentMessages = conversationHistory.slice(-10);
@@ -63,45 +52,30 @@ export async function generateResponse(
 ): Promise<string> {
   try {
     const systemPrompt = buildSystemPrompt({ user, conversationHistory });
-    const messages: ConversationMessage[] = conversationHistory
-      .filter((m) => m.sender === 'user' || m.sender === 'assistant')
-      .map((m) => ({
-        role: m.sender as 'user' | 'assistant',
-        content: m.content,
-      }));
 
-    messages.push({
-      role: 'user',
-      content: userMessage,
+    const messages: any[] = [
+      { role: 'system', content: systemPrompt },
+      ...conversationHistory
+        .filter((m) => m.sender === 'user' || m.sender === 'assistant')
+        .map((m) => ({
+          role: m.sender === 'user' ? 'user' : 'assistant',
+          content: m.content,
+        })),
+      { role: 'user', content: userMessage },
+    ];
+
+    // Call OpenAI Chat Completion API
+    const resp = await openai.chat.completions.create({
+      model: process.env.OPENAI_MODEL || 'gpt-4o-mini',
+      messages: messages as any,
+      max_tokens: 1024,
+      temperature: parseFloat(process.env.OPENAI_TEMPERATURE || '0.7'),
     });
 
-    if (provider === 'openai') {
-      const response = await openai.chat.completions.create({
-        model: 'gpt-4-turbo',
-        messages: messages as any,
-        system: systemPrompt,
-        max_tokens: 1024,
-        temperature: 0.7,
-      });
-
-      return response.choices[0].message.content || 'Unable to generate response';
-    } else {
-      // Default to Anthropic
-      const response = await anthropic.messages.create({
-        model: 'claude-3-5-sonnet-20241022',
-        max_tokens: 1024,
-        system: systemPrompt,
-        messages: messages as any,
-      });
-
-      const content = response.content[0];
-      if (content.type === 'text') {
-        return content.text;
-      }
-      return 'Unable to generate response';
-    }
+    const content = resp.choices?.[0]?.message?.content as string | undefined;
+    return content ?? 'Unable to generate response at the moment.';
   } catch (error) {
-    console.error('LLM Error:', error);
+    console.error('OpenAI LLM Error:', error);
     throw new Error('Failed to generate response');
   }
 }
